@@ -43,13 +43,13 @@ If the ROS base image is absent, fetch it through your approved Docker setup fir
 
 `compose.local.example.yaml` shows optional `/dev/dri` mappings for this workstation. Copy it to `compose.local.yaml` only if your display needs them. The local override is ignored by Git. The default Compose file uses an NVIDIA GPU reservation without fixed `/dev/dri` device numbers.
 
-## راهنمای فارسی: نصب Docker و اجرای پروژه
+## Install Docker and run the project
 
-این راهنما برای **اوبونتو 22.04 یا 24.04 با محیط گرافیکی X11 و کارت NVIDIA** است. درایور NVIDIA باید روی میزبان نصب باشد و دستور `nvidia-smi` کارت را نشان دهد. ROS 2 و CUDA هنگام ساخت تصویر پروژه داخل Docker نصب می‌شوند؛ نیازی به نصب آن‌ها روی میزبان نیست. برای نصب درایور متناسب با کارت و نسخهٔ اوبونتو، [راهنمای رسمی NVIDIA](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/ubuntu.html) را ببینید.
+These instructions are for **Ubuntu 22.04 or 24.04 with an X11 desktop and an NVIDIA GPU**. Install the NVIDIA driver on the host first and confirm that `nvidia-smi` detects the GPU. The project image installs ROS 2 and CUDA inside Docker, so they are not required on the host. See the [official NVIDIA driver guide](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/ubuntu.html) for your GPU and Ubuntu version.
 
-### ۱. نصب Docker Engine و Compose
+### 1. Install Docker Engine and Compose
 
-اگر Docker و افزونهٔ Compose از قبل نصب و قابل استفاده‌اند، این مرحله را رد کنید. در غیر این صورت، مخزن رسمی Docker را اضافه کنید و بسته‌ها را نصب کنید ([مستندات رسمی Docker](https://docs.docker.com/engine/install/ubuntu/)):
+If Docker Engine and the Compose plugin already work, skip this step. Otherwise, add Docker's official repository and install the packages ([Docker installation guide](https://docs.docker.com/engine/install/ubuntu/)):
 
 ```bash
 sudo apt update
@@ -71,17 +71,17 @@ sudo systemctl enable --now docker
 sudo docker run --rm hello-world
 ```
 
-اسکریپت `run.sh` دستورهای Docker را بدون `sudo` اجرا می‌کند. برای دادن این دسترسی به حساب خود، دستور زیر را بزنید و **یک بار از نشست کاربری خارج و دوباره وارد شوید**. عضویت در گروه `docker` دسترسی در سطح مدیر سیستم می‌دهد؛ [توضیح Docker](https://docs.docker.com/engine/install/linux-postinstall/) را بخوانید.
+The `run.sh` script calls Docker without `sudo`. To grant your account access, run the following command, then **sign out of your desktop session and sign back in**. Membership in the `docker` group grants root-level privileges; see [Docker's explanation](https://docs.docker.com/engine/install/linux-postinstall/).
 
 ```bash
 sudo usermod -aG docker "$USER"
 ```
 
-پس از ورود دوباره، `docker version` و `docker compose version` باید بدون `sudo` کار کنند.
+After signing back in, `docker version` and `docker compose version` should work without `sudo`.
 
-### ۲. نصب NVIDIA Container Toolkit
+### 2. Install NVIDIA Container Toolkit
 
-پس از اطمینان از کارکرد `nvidia-smi` روی میزبان، مخزن NVIDIA را اضافه و runtime مربوط به Docker را تنظیم کنید ([مستندات رسمی NVIDIA](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)):
+Once `nvidia-smi` works on the host, add NVIDIA's repository and configure its Docker runtime ([NVIDIA installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)):
 
 ```bash
 sudo apt update
@@ -96,9 +96,9 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
-### ۳. ساخت و اجرای پروژه
+### 3. Build and run the project
 
-در **ترمینال محیط گرافیکی X11** وارد پوشهٔ `RMPC_F1TENTH` شوید؛ همان پوشه‌ای که `run.sh` در آن است. `run.sh` به متغیر `DISPLAY` و فایل قابل‌خواندن `XAUTHORITY` (معمولاً `~/.Xauthority`) نیاز دارد. ابتدا تصویر پایه را دریافت کنید. سپس تصویر پروژه را بسازید و اجرا کنید:
+In an **X11 desktop terminal**, enter the `RMPC_F1TENTH` directory containing `run.sh`. The script needs the `DISPLAY` environment variable and a readable `XAUTHORITY` file (usually `~/.Xauthority`). Pull the base image, then build and run the project:
 
 ```bash
 docker pull osrf/ros:humble-desktop-full
@@ -109,13 +109,13 @@ docker pull osrf/ros:humble-desktop-full
 ./run.sh launch f1
 ```
 
-ساخت تصویر به اینترنت نیاز دارد و ممکن است زمان‌بر باشد. دستور `build --install-approved` وابستگی‌ها را **داخل تصویر Docker** نصب می‌کند. معماری CUDA در `docker/Dockerfile` روی `86` برای RTX 3050 تنظیم شده است؛ اگر کارت دیگری دارید، پیش از ساخت مقدار `CMAKE_CUDA_ARCHITECTURES` را متناسب با آن تغییر دهید. پس از اجرای `launch`، با **Ctrl+C** برنامه‌ها را متوقف کنید و سپس سرویس Docker پروژه را ببندید:
+The build needs internet access and may take some time. `build --install-approved` installs dependencies **inside the Docker image**. The CUDA architecture in `docker/Dockerfile` is set to `86` for an RTX 3050; for another GPU, adjust `CMAKE_CUDA_ARCHITECTURES` before building. After `launch` starts, press **Ctrl+C** to stop the programs, then stop the project service:
 
 ```bash
 ./run.sh down
 ```
 
-برای اجرای بدون RViz از `./run.sh launch f1 --no-rviz` استفاده کنید. اگر نمایش RViz مشکل داشت، توضیح `compose.local.example.yaml` در بخش انگلیسی بالا را ببینید.
+To run without RViz, use `./run.sh launch f1 --no-rviz`. If RViz has display issues, see the `compose.local.example.yaml` note above.
 
 ## Recorded run and figures
 
