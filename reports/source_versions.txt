@@ -1,0 +1,11 @@
+Prepared: 2026-11-12 America/New_York
+RMPC source snapshot: c5c190f3fc0ad4192b1e7c526661184d59230b66
+RMPC solver submodule: 2c25f4b1f9017951f8df5fc59add0e1ced3c44d6
+Simulator bridge installed pin: 08395766c4d9dc5a763381f1dd6fa4a3d68df66e
+Simulator gym installed pin: bdaec1420c3b0f103858d289866d0d4e2e597c30
+Existing Humble image ID: sha256:7b3968debcbd945c15382d88b3ce046e8019cbb2b27d8ea1caa4018fa0907280
+GPU compute capability: 8.6
+Built image ID: sha256:f353f55a885c0cc2cae31824cc1bb412ba13332eb204639c7abb4e01568ee354
+Install/build status: COMPLETED after user approval; dependencies installed inside project image only.
+Local smoke runs: clear and obstacles, each one complete detected lap.
+Data and metrics: see reports/run-summary.md and results/.

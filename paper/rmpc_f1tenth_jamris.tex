@@ -1,0 +1,153 @@
+\documentclass{jamris}
+\usepackage{amsmath,amssymb,booktabs}
+
+\Author*{Kaveh Hooshmandi}{k.hooshmandi@arakut.ac.ir}{}{Arak University of Technology}{}{}
+\Title{Randomized Model Predictive Control for F1TENTH Racing: A Simulation Case Study}
+\Keywords{autonomous racing, randomized model predictive control, F1TENTH, Pure Pursuit, simulation benchmark}
+\Year{2026}
+\Num{--}
+\Volnum{Draft}
+\FirstPage{1}
+\DOI{Draft manuscript; DOI pending}
+
+\begin{document}
+\maketitle
+
+\begin{Abstract}
+Randomized model predictive control (RMPC) has been demonstrated on a full-scale autonomous race car. We examine a public CUDA-based F1TENTH implementation, its two archived Indianapolis Motor Speedway (IMS) runs, and a new local run on an original, simplified Yas-Marina-inspired circuit. We then compare the implementation with a matched Pure Pursuit steering baseline in 100 independent, seeded, synchronous simulation trials: 80 nominal trials across two maps and three RMPC sample counts, plus 20 trials with a low-grip sector. Both methods share the centerline, speed policy, steering limits and LiDAR pipeline. All 100 trials completed one lap. At 5,000 samples, RMPC had mean root-mean-square lateral offsets of 0.184~m on IMS and 0.269~m on the new circuit; Pure Pursuit obtained 0.042 and 0.056~m, respectively. Mean laps were 53.51 versus 49.83~s on IMS and 61.16 versus 58.92~s on the new circuit. RMPC's median synchronized solve-call duration was approximately 0.92~ms; the largest observed solve call was 5.72~ms. A low-grip sector increased mean lateral error for both controllers. These results characterize this specific simulator, speed policy and perturbation protocol; they do not establish general superiority or full-scale equivalence.
+\end{Abstract}
+
+\section{Introduction}
+Autonomous racing couples path tracking, fast computation, and operation near physical constraints. Muraleedharan, Sim\~oes, and Pau demonstrated GPU-based RMPC on a full-scale race car and reported a 115.72~s autonomous lap at Yas Marina Circuit, compared with a 105.34~s human-driven lap \cite{muraleedharan2025racing}. Their controller samples input sequences in the frequency domain to reduce undesirable command oscillation. The full-scale experiment motivates a smaller, accessible simulation study; its vehicle model, actuators, circuit, and lap times must not be transferred directly to a F1TENTH car.
+
+The public F1TENTH RMPC repository \cite{mulakaloori2026repo} integrates a CUDA solver with a ROS~2 simulator, a LiDAR-derived local occupancy grid, and the IMS centerline. F1TENTH provides an open simulation environment for evaluating autonomous racing controllers \cite{okelly2020f1tenth}. This paper documents the control pipeline, presents the repository's recorded clear-track and slalom evidence, adds a local circuit run with a raw ROS~2 bag, and reports a controlled comparison against Pure Pursuit. The need for common benchmarks and explicit control-frequency evaluation has also been emphasized in F1TENTH research \cite{evans2024benchmarks}. Figure~\ref{fig:architecture} is an original schematic derived from the control concepts in \cite{muraleedharan2025racing} and the actual F1TENTH code \cite{mulakaloori2026repo}; it does not reproduce a figure from the reference article.
+
+\section{Simulation and Controller}
+\subsection{Environment and Reference}
+The repository uses ROS~2 Humble, \texttt{f1tenth\_gym\_ros}, and an NVIDIA GPU. The recorded benchmarks were reported for an RTX~3090 with a configured speed ceiling of 10.5~m/s \cite{mulakaloori2026repo}. The supplied IMS centerline stores map coordinates $(x_i,y_i)$ and nominal left and right widths. Figure~\ref{fig:track} shows the original simplified circuit used in the new local experiments. The controller subscribes to odometry and LiDAR scans and publishes Ackermann steering and speed commands. The local grid has 0.05~m cells and nominal dimensions of $6\times3$~m, according to the configuration file.
+
+For a vehicle position $\mathbf p=(x,y)$ and its nearest centerline sample $\mathbf p_i$, let $\mathbf t_i$ be the local unit tangent and $\mathbf n_i=(-t_{iy},t_{ix})$ its normal. The reported lateral variable is approximately
+\begin{equation}
+ d=(\mathbf p-\mathbf p_i)^\mathsf{T}\mathbf n_i.\label{eq:d}
+\end{equation}
+Thus $d$ is a track-relative lateral coordinate. It is analogous to the lateral error $y_e$ used in the full-scale paper \cite{muraleedharan2025racing}; it is not the global map coordinate $y$. The evaluator uses the nearest discrete point and tangent to compute $d$, while the online controller uses a nearby waypoint and its stored heading. This difference can cause small numerical differences between plotted and internal offsets.
+
+\begin{figure}[htb]
+\centering
+\includegraphics[width=\columnwidth]{figures/f1_track.pdf}
+\caption{Original simplified Yas-Marina-inspired circuit used in the local experiments. The generated centerline, track edges, and start location share one map coordinate system; the nominal road width is 2.9~m.}
+\label{fig:track}
+\end{figure}
+
+\subsection{Prediction and Actuation}
+At each odometry callback, the implementation projects the vehicle state into Frenet coordinates $(s,d,e_\psi)$, builds a centerline horizon, and invokes the GPU randomized solver. The configured horizon contains 100 stages at $\Delta t=0.02$~s and 5,000 sampled rollouts, with seven basis coefficients. The nominal horizon is 2.0~s; the stored states at indices 0--99 span 99 transitions, or 1.98~s. A cost for track-relative error, actuation, stability, boundary violation, and occupancy-grid intersection ranks candidate steering sequences \cite{mulakaloori2026repo}. The solver returns a steering action; the published speed is computed separately. The full-scale paper optimizes steering, throttle, and brake inputs, while holding gear constant during prediction and handling gear changes with separate logic \cite{muraleedharan2025racing}.
+
+The speed command uses a curvature ceiling of the form
+\begin{equation}
+ v_{\kappa}=\sqrt{\frac{\mu g}{\max_{k}|\kappa_k|+10^{-4}}},\label{eq:speed}
+\end{equation}
+where the code uses $\mu=0.523$ and bounds the final target to 2.5--10.5~m/s. A forward-obstacle-distance term also limits that target, followed by an acceleration and deceleration slew limiter. Equation~\ref{eq:speed} describes the implementation's heuristic speed ceiling; it is not an experimentally validated tire-grip limit. The LiDAR grid is inflated around observed cells, and predicted grid occupancy incurs a cost in the steering rollout. Figure~\ref{fig:architecture} summarizes the signal flow.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.92\textwidth]{figures/architecture.pdf}
+\caption{Original signal-flow schematic of the repository implementation. The GPU solver selects steering; a separate speed planner produces the speed command. The layout is informed by the RMPC controller description in \cite{muraleedharan2025racing} and verified against \cite{mulakaloori2026repo}.}
+\label{fig:architecture}
+\end{figure*}
+
+\input{controller_details}
+
+\subsection{RViz Views from the Public Implementation}
+The two RViz screenshots in Fig.~\ref{fig:rviz} are taken directly from the repository's \texttt{results/} directory \cite{mulakaloori2026repo}. Its README identifies the yellow dashed centerline, the white local occupancy-grid display, black inflated obstacle cells, cyan candidate rollouts, a red selected trajectory, and green detected obstacle cells. The left image provides an overview of the vehicle and local prediction region. The right image shows the obstacle-view screenshot: detected cells lie ahead of the vehicle while the selected trajectory passes to their left. These are visualizations of individual simulator states. They demonstrate how the map, LiDAR grid, and predicted path appear together, but they do not by themselves establish obstacle clearance or a lap-time result; those quantities come from the recorded evaluator output in Section~4.
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}[t]{.49\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/rviz_screenshot.png}\\[-1mm]
+\small (a) RViz overview
+\end{minipage}\hfill
+\begin{minipage}[t]{.49\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/rviz_obstacles_screenshot.png}\\[-1mm]
+\small (b) RViz obstacle view
+\end{minipage}
+\caption{RViz views reproduced from \texttt{results/rviz\_screenshot.png} and \texttt{results/rviz\_obstacles\_screenshot.png} in the RMPC simulation repository \cite{mulakaloori2026repo} (Apache-2.0). The repository README supplies the display-color interpretation described in the text.}
+\label{fig:rviz}
+\end{figure*}
+
+\section{Evaluation Method}
+We treat the published JSON summaries and PNG plots in repository revision \texttt{c5c190f} as the source dataset \cite{mulakaloori2026repo}. The raw ROS~2 bags are not included in the repository, so the original trajectories and message-level statistics cannot be independently recomputed here. The two source cases are a nominal clear-track run and a run with three fixed obstacle points. Separately, we recorded a local ROS~2 bag on a new circuit using the same controller snapshot and evaluator. The evaluator detects laps when nearest-centerline progress wraps from above 90\% to below 10\% of track length. It estimates obstacle clearance by subtracting a 0.25~m obstacle radius and a 0.20~m vehicle radius from center-to-center distance. This is a point-and-circle geometric estimate, not a simulator contact check. In no-obstacle runs, the evaluator stores a 10,000~m placeholder rather than a measured clearance; therefore no clearance is reported for them.
+
+The evaluator plots $d(t)$, nearest-obstacle gap, and commanded versus kinematically inferred steering. It also takes differences between consecutive \texttt{/drive} message timestamps. Because the solver runs in an odometry callback before publishing, these intervals include controller execution, ROS scheduling, and other overhead; they do not isolate GPU kernel time. The configured 20~ms rollout step is shown as a reference value, not proof of a measured 50~Hz deadline.
+
+\section{Simulation Results}
+Table~\ref{tab:results} transcribes the saved benchmark summaries. The clear-track run records two detected laps, 34.77 and 32.62~s, over 70.74~s of analyzed odometry. The slalom records one detected lap of 39.09~s over 43.12~s. The slalom fastest lap is 6.47~s longer than the clear-track fastest lap, a descriptive difference of 19.8\%. With only one slalom lap and no repeated trials, this is not an estimate of a general obstacle penalty.
+
+\begin{table}[htb]
+\centering
+\caption{Repository-reported results from one clear-track and one slalom run. ``--'' means inapplicable or unavailable.}
+\label{tab:results}
+\small
+\begin{tabular}{lrr}
+\toprule
+Metric & Clear track & Slalom\\
+\midrule
+Detected laps & 2 & 1\\
+Fastest lap (s) & 32.62 & 39.09\\
+Mean lap (s) & 33.69 & 39.09\\
+Analyzed duration (s) & 70.74 & 43.12\\
+Min. obstacle gap (m) & -- & 0.054\\
+Mean drive interval (ms) & 7.37 & 7.03\\
+P99 drive interval (ms) & 16.69 & 16.79\\
+Max. drive interval (ms) & 19.91 & 335.87\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Lateral $y$ Response and Obstacle Passage}
+Figure~\ref{fig:yresponse} is the repository's recorded slalom plot. Its upper trace is the requested lateral $y$ simulation response, represented by $d(t)$ in Eq.~\ref{eq:d}. The trace changes sign as the vehicle follows the IMS route and passes obstacles. The middle trace shows four close-approach events in the displayed window and remains above zero; the JSON summary gives a minimum estimated gap of 0.054~m over the run. The lower trace shows the published steering command and a steering angle inferred by the evaluator from speed and yaw rate. The dashed $d=\pm4$~m lines in the source plot are plotting guides, not the IMS track boundaries; the source CSV gives nominal 1.1~m widths on each side. The plot supports qualitative lateral-response and obstacle-passage observations, but it does not provide raw samples for exact RMS tracking error or a verified collision rate.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.73\textwidth]{figures/slalom_y_response.png}
+\caption{Recorded slalom simulation output from \cite{mulakaloori2026repo}: top, lateral centerline offset $d(t)$, used here as the lateral $y$ response; middle, estimated obstacle gap; bottom, commanded and inferred applied steering. Reproduced from the repository's \texttt{results/bag\_slalom\_benchmark.png} (Apache-2.0). The 4~m dashed lines are source-plot guides.}
+\label{fig:yresponse}
+\end{figure*}
+
+\subsection{New Simplified Circuit Run}
+To assess whether the same implementation can follow a different centerline, we constructed an original closed circuit inspired by the broad layout of Yas Marina. This is neither a scaled copy nor an official circuit map. A periodic spline through manually selected points generated both the occupancy map and the controller centerline. The resulting 322.20~m route has a 2.9~m road width, a minimum sampled radius of approximately 3.98~m, and a map resolution of 0.06~m/pixel. We used the RTX~3050 laptop GPU in this study, the same 100-stage, 5,000-sample controller, and a reduced maximum commanded speed of 7.0~m/s. No extra obstacles were added. The map generator, launch configuration, ROS~2 bag, and analysis script are included in the accompanying \texttt{RMPC\_F1TENTH} project folder.
+
+The 161.36~s local recording contains two detected laps, of 63.70 and 59.41~s. Figure~\ref{fig:localf1} plots all 40,312 recorded odometry samples against the generated centerline, together with $d(t)$ calculated using the same nearest-sample normal projection as the repository evaluator. The maximum recorded $|d|$ is 0.662~m, below the 1.45~m centerline-to-map-edge distance. This geometric observation does not by itself certify full vehicle-body clearance. The local 99th-percentile \texttt{/drive} message interval is 6.82~ms, and its maximum is 17.93~ms; neither value isolates solver execution. Since the circuit length, curvature, speed cap, and computer differ from the source IMS experiments, their lap times should not be treated as a matched performance comparison.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.95\textwidth]{figures/local_f1_track_response.png}
+\caption{New local run on the original simplified Yas-Marina-inspired map. Left: generated map edges and centerline with the recorded vehicle path. Right: track-relative lateral response $d(t)$, the requested lateral simulation $y$ variable. Red dashed lines mark the 1.45~m centerline-to-map-edge distance, not a body-clearance bound. The trace is computed from the archived ROS~2 bag.}
+\label{fig:localf1}
+\end{figure*}
+
+\subsection{Timing and Interpretation}
+The saved 99th-percentile \texttt{/drive} intervals are below 20~ms in both runs, but the slalom maximum is 335.87~ms. The repository suggests a startup transient, without a timestamp-level analysis to verify that explanation. We therefore do not claim that every cycle met a 20~ms deadline. The observed intervals also cannot be compared directly with the approximately 3~ms GPU computation and 100~Hz control rate reported for the distinct full-scale vehicle and hardware in \cite{muraleedharan2025racing}. The repository's single-run results show an operating F1TENTH control pipeline and a positive estimated slalom margin, while leaving repeatability, exact deadline satisfaction, and robustness to new obstacle layouts open.
+
+\input{controlled_study}
+
+\section{Discussion}
+The full-scale reference study and the F1TENTH case share a randomized predictive-control idea, but their control problems differ in important ways. The full-scale controller addresses simultaneous lateral and longitudinal inputs while tracking a speed-bearing race line and operating near estimated tire-force constraints \cite{muraleedharan2025racing}. The F1TENTH implementation uses a centerline, optimizes steering against local costs, and then calculates a separate speed command. Its obstacle handling uses an inflated local occupancy grid and a forward-distance speed heuristic. A comparison of their lap times or GPU timings would therefore mix hardware, vehicle scale, track geometry, controller scope, and measurement method.
+
+The $d(t)$ signal in Fig.~\ref{fig:yresponse} is useful because it shows how a lateral tracking variable evolves during obstacle passages. However, a small $|d|$ alone does not prove that the vehicle stayed within track limits: safe lateral position depends on local left and right widths, body dimensions, and obstacle occupancy. Similarly, the positive 0.054~m reported obstacle gap is a minimum over a simplified circle model, not a robust safety margin. The near-zero clearance warrants more detailed review of the underlying trajectory if those bags become available.
+
+The timing record also illustrates why several quantities must be kept separate. The 20~ms value is a configured rollout step. The 16.79~ms slalom P99 is a distributional property of message spacing. The 335.87~ms maximum is a recorded outlier whose cause has not been confirmed. None is an isolated GPU solve measurement. An instrumented study should log solver start and finish times, callback timestamps, and message publication times on the same clock, then report deadline misses directly.
+
+The new controlled study supplies a matched steering baseline and repeated trials for two maps. Its narrower speed cap, synchronous stepping, and different hardware prevent direct numerical comparison with the repository's ROS~2 bags. Further work should vary obstacles, speed profiles, sensor delay, vehicle parameters and maps, with controller tuning fixed on separate development seeds.
+
+\section{Limitations and Conclusion}
+The original IMS evidence is limited to two saved run summaries and plots; their raw bags are unavailable. The new circuit ROS~2 bag represents one asynchronous run with two laps. The separate controlled dataset has ten independent trials per condition, but only two maps, small initial perturbations, ground-truth odometry, one fixed Pure Pursuit lookahead, one speed cap and a simplified friction transition. Its results are sensitive to these choices. The slalom obstacle-margin calculation uses three fixed points and circular radii, so it does not certify contact-free driving under a full vehicle footprint. The repository itself notes that obstacle-avoidance runs may become unstable after several runs \cite{mulakaloori2026repo}. The controlled-study times exclude ROS transport and the simulator; they establish computation cost in this harness, not a deployed deadline guarantee.
+
+This JAMRIS case study connects the full-scale RMPC formulation to the F1TENTH implementation while preserving their differences. The source slalom plot and the new circuit recording show the lateral $d(t)$, or track-relative $y$, response. In the additional controlled trials, both algorithms completed all laps, while Pure Pursuit achieved lower mean tracking error and faster mean laps under the matched speed policy. Increasing RMPC samples produced small, variable changes in tracking and solve time. The archived traces and configurations make these bounded findings reproducible and provide a basis for a stronger obstacle-aware comparison.
+
+\AuthorNote
+\raggedend
+\bibliographystyle{jamris}
+\bibliography{references}
+\end{document}
